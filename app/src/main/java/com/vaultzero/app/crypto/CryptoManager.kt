@@ -1,16 +1,19 @@
 package com.vaultzero.app.crypto
 
-import android.util.Base64
+import de.mkammerer.argon2.Argon2Factory
+import org.bouncycastle.crypto.engines.AESEngine
+import org.bouncycastle.crypto.generators.PKCS5S2ParametersGenerator
+import org.bouncycastle.crypto.modes.GCMBlockCipher
+import org.bouncycastle.crypto.params.AEADParameters
+import org.bouncycastle.crypto.params.KeyParameter
+import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.security.SecureRandom
-import javax.crypto.Cipher
+import java.security.Security
 import javax.crypto.Mac
-import javax.crypto.SecretKeyFactory
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.SecretKeySpec
 
 /**
@@ -46,9 +49,6 @@ class CryptoManager {
         const val PBKDF2_ITERATIONS = 600_000
 
         const val VAULT_VERSION = 1
-
-        // Keyfile derivation info string for HKDF-like SHA-256 composition
-        private const val KEYFILE_INFO = "VaultZero/Keyfile/v1"
 
         init {
             // Ensure BouncyCastle is available
@@ -262,7 +262,7 @@ class CryptoManager {
 
     /**
      * Derive a per-entry key from the master key and entry UUID.
-     * entryKey = HMAC-SHA256(masterKey, "VaultZero/Entry/1.0" || entryUuid)
+     * entryKey = HMAC-SHA256(masterKey, "VaultZero/Entry/1.0" + entryUuid)
      */
     fun deriveEntryKey(masterKey: ByteArray, entryUuid: String): ByteArray {
         val info = "VaultZero/Entry/1.0$entryUuid".toByteArray(StandardCharsets.UTF_8)
@@ -293,7 +293,6 @@ class CryptoManager {
         val byteBuffer = StandardCharsets.UTF_8.encode(charBuffer)
         val bytes = ByteArray(byteBuffer.remaining())
         byteBuffer.get(bytes)
-        // Clear the direct buffer if it has an array backing
         if (byteBuffer.hasArray()) {
             byteBuffer.array().fill(0)
         }
@@ -338,7 +337,7 @@ class CryptoManager {
     private val LOWER = "abcdefghijklmnopqrstuvwxyz"
     private val UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     private val DIGITS = "0123456789"
-    private val SYMBOLS = "!@#$%^&*()-_=+[]{}|;:,.<>?"
+    private val SYMBOLS = "!@#$%^&*()-_=+[]{}|;:,<>?"
     private val AMBIGUOUS = "0O1lI"
 
     /**

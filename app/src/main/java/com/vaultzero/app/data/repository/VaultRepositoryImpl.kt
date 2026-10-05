@@ -15,10 +15,12 @@ import com.vaultzero.app.domain.model.PasswordGeneratorDefaults
 import com.vaultzero.app.domain.model.UnlockResult
 import com.vaultzero.app.domain.model.VaultEntry
 import com.vaultzero.app.domain.model.VaultGroup
+import com.vaultzero.app.domain.model.VaultSettings
 import com.vaultzero.app.domain.repository.VaultRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import java.io.File
 import javax.inject.Inject
@@ -83,6 +85,16 @@ class VaultRepositoryImpl @Inject constructor(
     )
     override val entries: Flow<List<VaultEntry>> = _entries.asStateFlow()
 
+    override fun getEntries(groupId: String?): Flow<List<VaultEntry>> {
+        return if (groupId == null) {
+            _entries.asStateFlow()
+        } else {
+            _entries.asStateFlow().map { list ->
+                list.filter { it.groupId == groupId }
+            }
+        }
+    }
+
     private val _groups = MutableStateFlow(
         listOf(
             VaultGroup(id = "group_1", name = "Email", createdAt = 1700000000000, modifiedAt = 1700000000000),
@@ -91,6 +103,8 @@ class VaultRepositoryImpl @Inject constructor(
         )
     )
     override val groups: Flow<List<VaultGroup>> = _groups.asStateFlow()
+
+    override fun getGroups(): Flow<List<VaultGroup>> = _groups.asStateFlow()
 
     override val theme: Flow<AppTheme> = context.dataStore.data.map { prefs ->
         prefs[PREF_THEME]?.let { AppTheme.valueOf(it) } ?: AppTheme.SYSTEM
@@ -114,6 +128,37 @@ class VaultRepositoryImpl @Inject constructor(
 
     override val biometricEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[PREF_BIOMETRIC_ENABLED] ?: false
+    }
+
+    override fun getSettings(): Flow<VaultSettings> {
+        return combine(theme, autoLockTimeout, passwordDefaults, biometricEnabled) { t, to, pd, be ->
+            VaultSettings(
+                theme = t,
+                autoLockTimeout = to,
+                passwordLength = pd.length,
+                includeUppercase = pd.includeUppercase,
+                includeLowercase = pd.includeLowercase,
+                includeDigits = pd.includeNumbers,
+                includeSymbols = pd.includeSymbols,
+                excludeAmbiguous = pd.excludeAmbiguous,
+                clipboardClearSeconds = 30,
+                biometricEnabled = be
+            )
+        }
+    }
+
+    override suspend fun saveSettings(settings: VaultSettings) {
+        context.dataStore.edit {
+            it[PREF_THEME] = settings.theme.name
+            it[PREF_AUTO_LOCK] = settings.autoLockTimeout.seconds
+            it[PREF_PW_LENGTH] = settings.passwordLength
+            it[PREF_PW_UPPER] = settings.includeUppercase
+            it[PREF_PW_LOWER] = settings.includeLowercase
+            it[PREF_PW_NUMBERS] = settings.includeDigits
+            it[PREF_PW_SYMBOLS] = settings.includeSymbols
+            it[PREF_PW_AMBIGUOUS] = settings.excludeAmbiguous
+            it[PREF_BIOMETRIC_ENABLED] = settings.biometricEnabled
+        }
     }
 
     // ------------------------------------------------------------------
@@ -207,7 +252,7 @@ class VaultRepositoryImpl @Inject constructor(
     }
 
     // ------------------------------------------------------------------
-    // Settings
+    // Settings (individual setters already covered above)
     // ------------------------------------------------------------------
 
     override suspend fun setTheme(theme: AppTheme) {
