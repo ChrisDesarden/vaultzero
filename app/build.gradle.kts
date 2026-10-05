@@ -10,6 +10,7 @@ plugins {
 android {
     namespace = "com.vaultzero.app"
     compileSdk = 35
+    buildToolsVersion = "35.0.0"
 
     defaultConfig {
         applicationId = "com.vaultzero.app"
@@ -54,8 +55,7 @@ android {
             excludes += "/META-INF/versions/**"
         }
         jniLibs {
-            // Keep SQLCipher native libs uncompressed so System.loadLibrary works
-            useLegacyPackaging = true
+            useLegacyPackaging = false
         }
     }
     testOptions {
@@ -101,9 +101,8 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     implementation(libs.sqlcipher.android)
 
-    // Crypto (JVM tests only; Android uses javax.crypto built-ins)
-    testImplementation(libs.bouncycastle.bcprov)
-    testImplementation(libs.argon2.jvm)
+    // Crypto primitives (BouncyCastle for AES-256-GCM/HMAC; PBKDF2 key derivation)
+    implementation(libs.bouncycastle.bcprov)
 
     // Tests
     testImplementation(libs.junit)

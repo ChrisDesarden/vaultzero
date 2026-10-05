@@ -1,5 +1,12 @@
 package com.vaultzero.app.presentation.settings
 
+import android.content.Context
+import android.content.ContextWrapper
+import android.util.Log
+
+import androidx.fragment.app.FragmentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,7 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
@@ -22,7 +29,11 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -35,7 +46,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.vaultzero.app.R
@@ -49,17 +63,8 @@ fun SettingsScreen(
     onBack: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
-    val event by viewModel.events.collectAsState()
-
-    event?.let {
-        when (it) {
-            is SettingsViewModel.SettingsEvent.BiometricUnavailable -> {
-                Text(stringResource(R.string.error_biometric_not_available))
-                viewModel.consumeEvent()
-            }
-            else -> viewModel.consumeEvent()
-        }
-    }
+    val context = LocalContext.current
+    var biometricMessage by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
@@ -92,47 +97,146 @@ fun SettingsScreen(
                 selected = state.autoLockTimeout,
                 onSelect = viewModel::setAutoLockTimeout
             )
+
             if (state.biometricAvailable) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Spacer(modifier = Modifier.height(8.dp))
+                BiometricRow(
+                    enabled = state.biometricEnabled,
+                    onToggle = { enabled ->
+                        val activity = context.unwrapToFragmentActivity()
+                        activity?.let {
+                            viewModel.setBiometricEnabled(it, enabled) { msg ->
+                                biometricMessage = msg
+                            }
+                        } ?: run {
+                            biometricMessage = "Could not get FragmentActivity context"
+                        }
+                    }
+                )
+                biometricMessage?.let {
                     Text(
-                        text = stringResource(R.string.biometric_unlock),
-                        modifier = Modifier.weight(1f)
-                    )
-                    Switch(
-                        checked = state.biometricEnabled,
-                        onCheckedChange = viewModel::setBiometricEnabled
+                        text = it,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 4.dp)
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            SectionTitle(stringResource(R.string.import_export))
+            ImportExportSection(
+                viewModel = viewModel,
+                onMessage = { msg -> biometricMessage = msg }
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
             SectionTitle(stringResource(R.string.password_generator))
-            PasswordDefaultsCard(state = state, viewModel = viewModel)
-
-            Spacer(modifier = Modifier.height(16.dp))
-            SectionTitle(stringResource(R.string.data))
-            Row(modifier = Modifier.fillMaxWidth()) {
-                Button(
-                    onClick = viewModel::exportVault,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(stringResource(R.string.export))
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Button(
-                    onClick = viewModel::importVault,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(stringResource(R.string.import_))
-                }
-            }
+            PasswordDefaultsCard(
+                state = state,
+                viewModel = viewModel
+            )
         }
     }
+}
+
+@Composable
+private fun ImportExportSection(
+    viewModel: SettingsViewModel,
+    onMessage: (String?) -> Unit
+) {
+    val context = LocalContext.current
+    var pendingExportUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var pendingImportUri by remember { mutableStateOf<android.net.Uri?>(null) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/octet-stream"),
+        onResult = { uri ->
+            pendingExportUri = uri
+            if (uri == null) onMessage("Export cancelled")
+        }
+    )
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri ->
+            pendingImportUri = uri
+            if (uri == null) onMessage("Import cancelled")
+        }
+    )
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = { exportLauncher.launch("vaultzero-export.vzc") },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Export encrypted CSV")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = { importLauncher.launch(arrayOf("application/octet-stream", "*/*")) },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Import encrypted CSV")
+        }
+    }
+
+    pendingExportUri?.let { uri ->
+        PasswordDialog(
+            title = "Export password",
+            onDismiss = { pendingExportUri = null },
+            onConfirm = { password ->
+                pendingExportUri = null
+                viewModel.exportVault(uri, password) { msg -> onMessage(msg) }
+            }
+        )
+    }
+
+    pendingImportUri?.let { uri ->
+        PasswordDialog(
+            title = "Import password",
+            onDismiss = { pendingImportUri = null },
+            onConfirm = { password ->
+                pendingImportUri = null
+                viewModel.importVault(uri, password) { msg -> onMessage(msg) }
+            }
+        )
+    }
+}
+
+@Composable
+private fun PasswordDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var password by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                value = password,
+                onValueChange = { password = it },
+                label = { Text("Password") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(password) },
+                enabled = password.isNotBlank()
+            ) {
+                Text("OK")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable
@@ -145,8 +249,61 @@ private fun SectionTitle(title: String) {
     )
 }
 
+private fun Context.unwrapToFragmentActivity(): FragmentActivity? {
+    var ctx = this
+    while (ctx is ContextWrapper) {
+        if (ctx is FragmentActivity) return ctx
+        ctx = ctx.baseContext
+    }
+    return null
+}
+
 @Composable
-private fun ThemeSelector(selected: AppTheme, onSelect: (AppTheme) -> Unit) {
+private fun BiometricRow(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(
+                value = enabled,
+                onValueChange = onToggle,
+                role = Role.Switch
+            )
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Default.Fingerprint,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(end = 16.dp)
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.biometric_setup),
+                style = MaterialTheme.typography.bodyLarge
+            )
+            Text(
+                text = if (enabled) "Enabled" else "Disabled",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(
+            checked = enabled,
+            onCheckedChange = null
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ThemeSelector(
+    selected: AppTheme,
+    onSelect: (AppTheme) -> Unit
+) {
     val options = listOf(AppTheme.LIGHT, AppTheme.DARK, AppTheme.SYSTEM)
     var expanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(
@@ -188,6 +345,7 @@ private fun ThemeSelector(selected: AppTheme, onSelect: (AppTheme) -> Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TimeoutSelector(
     selected: AutoLockTimeout,

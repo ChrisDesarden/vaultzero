@@ -1,121 +1,165 @@
 package com.vaultzero.app.presentation.settings
 
+import android.util.Log
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vaultzero.app.biometric.BiometricHelper
 import com.vaultzero.app.domain.model.AppTheme
 import com.vaultzero.app.domain.model.AutoLockTimeout
 import com.vaultzero.app.domain.model.PasswordGeneratorDefaults
-import com.vaultzero.app.domain.repository.VaultRepository
+import com.vaultzero.app.domain.model.VaultSettings
+import com.vaultzero.app.domain.usecase.DisableBiometricUseCase
+import com.vaultzero.app.domain.usecase.ExportVaultUseCase
+import com.vaultzero.app.domain.usecase.ImportVaultUseCase
+import com.vaultzero.app.domain.usecase.EnrollBiometricUseCase
+import com.vaultzero.app.domain.usecase.GetSettingsUseCase
+import com.vaultzero.app.domain.usecase.SaveSettingsUseCase
+import com.vaultzero.app.domain.usecase.SetAutoLockTimeoutUseCase
+import com.vaultzero.app.domain.usecase.SetPasswordDefaultsUseCase
+import com.vaultzero.app.domain.usecase.SetThemeUseCase
+import com.vaultzero.app.presentation.biometric.BiometricHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    private val repository: VaultRepository,
+    private val getSettings: GetSettingsUseCase,
+    private val saveSettings: SaveSettingsUseCase,
+    private val setTheme: SetThemeUseCase,
+    private val setAutoLockTimeout: SetAutoLockTimeoutUseCase,
+    private val setPasswordDefaults: SetPasswordDefaultsUseCase,
+    private val enrollBiometric: EnrollBiometricUseCase,
+    private val disableBiometric: DisableBiometricUseCase,
+    private val exportVault: ExportVaultUseCase,
+    private val importVault: ImportVaultUseCase,
     private val biometricHelper: BiometricHelper
 ) : ViewModel() {
 
-    val uiState: StateFlow<SettingsUiState> = combine(
-        repository.theme,
-        repository.autoLockTimeout,
-        repository.passwordDefaults,
-        repository.biometricEnabled,
-        kotlinx.coroutines.flow.flowOf(biometricHelper.canAuthenticate())
-    ) { theme, timeout, defaults, biometricEnabled, biometricAvailable ->
-        SettingsUiState(
-            theme = theme,
-            autoLockTimeout = timeout,
-            passwordDefaults = defaults,
-            biometricEnabled = biometricEnabled,
-            biometricAvailable = biometricAvailable
-        )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsUiState())
+    private val _uiState = MutableStateFlow(SettingsUiState())
+    val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
-    private val _events = MutableStateFlow<SettingsEvent?>(null)
-    val events: StateFlow<SettingsEvent?> = _events.asStateFlow()
+    init {
+        viewModelScope.launch {
+            getSettings().collect { settings ->
+                _uiState.update {
+                    it.copy(
+                        theme = settings.theme,
+                        autoLockTimeout = settings.autoLockTimeout,
+                        passwordDefaults = PasswordGeneratorDefaults(
+                            length = settings.passwordLength,
+                            includeUppercase = settings.includeUppercase,
+                            includeLowercase = settings.includeLowercase,
+                            includeNumbers = settings.includeDigits,
+                            includeSymbols = settings.includeSymbols,
+                            excludeAmbiguous = settings.excludeAmbiguous
+                        ),
+                        biometricAvailable = biometricHelper.isAvailable(),
+                        biometricEnabled = settings.biometricEnabled
+                    )
+                }
+            }
+        }
+    }
 
     fun setTheme(theme: AppTheme) {
-        viewModelScope.launch { repository.setTheme(theme) }
+        viewModelScope.launch { setTheme.invoke(theme) }
     }
 
     fun setAutoLockTimeout(timeout: AutoLockTimeout) {
-        viewModelScope.launch { repository.setAutoLockTimeout(timeout) }
+        viewModelScope.launch { setAutoLockTimeout.invoke(timeout) }
     }
 
     fun setPasswordLength(length: Int) {
         viewModelScope.launch {
-            val current = uiState.value.passwordDefaults
-            repository.setPasswordDefaults(current.copy(length = length.coerceIn(4, 128)))
+            val current = _uiState.value.passwordDefaults
+            setPasswordDefaults(current.copy(length = length.coerceIn(4, 128)))
         }
     }
 
     fun togglePasswordOption(option: PasswordOption, enabled: Boolean) {
         viewModelScope.launch {
-            val current = uiState.value.passwordDefaults
-            repository.setPasswordDefaults(
-                when (option) {
-                    PasswordOption.UPPERCASE -> current.copy(includeUppercase = enabled)
-                    PasswordOption.LOWERCASE -> current.copy(includeLowercase = enabled)
-                    PasswordOption.NUMBERS -> current.copy(includeNumbers = enabled)
-                    PasswordOption.SYMBOLS -> current.copy(includeSymbols = enabled)
-                    PasswordOption.AMBIGUOUS -> current.copy(excludeAmbiguous = enabled)
-                }
+            val current = _uiState.value.passwordDefaults
+            val updated = when (option) {
+                PasswordOption.UPPERCASE -> current.copy(includeUppercase = enabled)
+                PasswordOption.LOWERCASE -> current.copy(includeLowercase = enabled)
+                PasswordOption.NUMBERS -> current.copy(includeNumbers = enabled)
+                PasswordOption.SYMBOLS -> current.copy(includeSymbols = enabled)
+                PasswordOption.AMBIGUOUS -> current.copy(excludeAmbiguous = enabled)
+            }
+            setPasswordDefaults(updated)
+        }
+    }
+
+    fun saveLegacySettings() {
+        viewModelScope.launch {
+            val s = _uiState.value
+            saveSettings(
+                VaultSettings(
+                    theme = s.theme,
+                    autoLockTimeout = s.autoLockTimeout,
+                    passwordLength = s.passwordDefaults.length,
+                    includeUppercase = s.passwordDefaults.includeUppercase,
+                    includeLowercase = s.passwordDefaults.includeLowercase,
+                    includeDigits = s.passwordDefaults.includeNumbers,
+                    includeSymbols = s.passwordDefaults.includeSymbols,
+                    excludeAmbiguous = s.passwordDefaults.excludeAmbiguous
+                )
             )
         }
     }
 
-    fun setBiometricEnabled(enabled: Boolean) {
+    fun setBiometricEnabled(activity: FragmentActivity, enabled: Boolean, onResult: (String?) -> Unit) {
+        Log.d("SettingsViewModel", "setBiometricEnabled enabled=$enabled available=${biometricHelper.isAvailable()}")
         viewModelScope.launch {
-            if (enabled && !biometricHelper.canAuthenticate()) {
-                _events.value = SettingsEvent.BiometricUnavailable
+            if (!biometricHelper.isAvailable()) {
+                onResult("Biometric unlock is not available on this device")
                 return@launch
             }
-            repository.setBiometricEnabled(enabled)
-            if (!enabled) {
-                repository.clearBiometricKey()
+            if (enabled) {
+                biometricHelper.prompt(
+                    activity,
+                    onSuccess = {
+                        viewModelScope.launch {
+                            val ok = enrollBiometric()
+                            onResult(if (ok) null else "Failed to enroll biometric unlock")
+                        }
+                    },
+                    onError = { msg -> onResult(msg) }
+                )
+            } else {
+                disableBiometric()
+                onResult(null)
             }
-            _events.value = SettingsEvent.BiometricChanged(enabled)
         }
     }
 
-    fun exportVault() {
+    fun exportVault(uri: android.net.Uri, password: String, onResult: (String?) -> Unit) {
         viewModelScope.launch {
-            _events.value = SettingsEvent.ExportRequested
+            val ok = exportVault.invoke(uri, password)
+            onResult(if (ok) null else "Export failed")
         }
     }
 
-    fun importVault() {
+    fun importVault(uri: android.net.Uri, password: String, onResult: (String?) -> Unit) {
         viewModelScope.launch {
-            _events.value = SettingsEvent.ImportRequested
+            val ok = importVault.invoke(uri, password)
+            onResult(if (ok) null else "Import failed: wrong password or bad file")
         }
     }
 
-    fun consumeEvent() {
-        _events.value = null
-    }
 
     data class SettingsUiState(
         val theme: AppTheme = AppTheme.SYSTEM,
         val autoLockTimeout: AutoLockTimeout = AutoLockTimeout.FIVE_MINUTES,
         val passwordDefaults: PasswordGeneratorDefaults = PasswordGeneratorDefaults(),
-        val biometricEnabled: Boolean = false,
-        val biometricAvailable: Boolean = false
+        val biometricAvailable: Boolean = false,
+        val biometricEnabled: Boolean = false
     )
-
-    sealed class SettingsEvent {
-        data class BiometricChanged(val enabled: Boolean) : SettingsEvent()
-        data object BiometricUnavailable : SettingsEvent()
-        data object ExportRequested : SettingsEvent()
-        data object ImportRequested : SettingsEvent()
-    }
 
     enum class PasswordOption { UPPERCASE, LOWERCASE, NUMBERS, SYMBOLS, AMBIGUOUS }
 }

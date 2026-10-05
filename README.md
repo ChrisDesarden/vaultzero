@@ -1,22 +1,41 @@
 # VaultZero
 
-A completely offline, open-source Android password manager inspired by Password Safe and KeePassDX.
+A fully offline, open-source Android password manager. No cloud, no network permissions,
+strong encryption, optional biometric unlock, and a Material Design 3 interface.
 
-VaultZero keeps your credentials under your control: no cloud, no network permissions, strong encryption, and optional biometric unlocking.
+> **Status:** Functional prototype. The data layer is real (Room + SQLCipher + AES-GCM),
+> the UI layer is built with Jetpack Compose, and the app runs on Android 8.0+ devices.
+
+---
+
+## Why VaultZero
+
+Most password managers either store your secrets on someone else's server or are too complex
+to audit. VaultZero takes the opposite approach:
+
+- Your vault never leaves the device.
+- The app requests **zero network permissions**.
+- The code is small enough to read and reason about.
+- Encryption primitives come from well-known, battle-tested libraries.
 
 ---
 
 ## Features
 
-- **Offline only** — zero network permissions.
-- **Strong encryption** — Keystore-backed keys wrap the database key.
-- **Biometric unlock** — Android BiometricPrompt with master-password fallback.
-- **Groups & entries** — organize passwords into groups and search across them.
+- **Offline only** — no `INTERNET` permission, no sync, no telemetry.
+- **Strong encryption**
+  - Master password is stretched with **Argon2id** (preferred) or **PBKDF2-HMAC-SHA512** fallback.
+  - SQLCipher encrypts the SQLite database file.
+  - Passwords and notes are encrypted a second time with per-entry **AES-256-GCM** keys.
+- **Biometric unlock** — Android `BiometricPrompt` with master-password fallback.
+- **Groups & entries** — organize credentials and search across them.
 - **Password generator** — configurable length, character sets, and ambiguity exclusion.
 - **Secure clipboard** — copied values auto-clear after 30 seconds.
-- **Auto-lock** — configurable inactivity timeout.
-- **Light & dark themes** — Material Design 3 with dynamic theming.
-- **Export / import** — backup and restore your encrypted vault locally.
+- **Auto-lock / lockdown** — configurable timeout, manual lockdown, and background lock that
+  returns you to the login screen.
+- **Encrypted export / import** — back up the vault as a password-protected encrypted CSV
+  that VaultZero can restore later.
+- **Light & dark themes** — Material Design 3 with dynamic color support.
 
 ---
 
@@ -26,7 +45,22 @@ VaultZero keeps your credentials under your control: no cloud, no network permis
 |--------|------------|--------------|----------|
 | ![Unlock](docs/screenshots/unlock.png) | ![Home](docs/screenshots/home.png) | ![Detail](docs/screenshots/detail.png) | ![Settings](docs/screenshots/settings.png) |
 
-> Placeholder screenshots — add your own under `docs/screenshots/`.
+> Placeholder screenshots — add real ones under `docs/screenshots/`.
+
+---
+
+## Tech Stack
+
+| Layer | Libraries |
+|-------|-----------|
+| UI | Jetpack Compose, Material Design 3, Navigation Compose |
+| Dependency Injection | Hilt (Dagger) |
+| Database | Room + SQLCipher |
+| Crypto primitives | BouncyCastle `bcprov-jdk18on` (PBKDF2 + AES-GCM in tests), `javax.crypto` (AES-GCM on device) |
+| KDF | Argon2id via `de.mkammerer:argon2-jvm` with PBKDF2 fallback |
+| Settings | DataStore Preferences |
+| Biometrics | `androidx.biometric:biometric` |
+| Testing | JUnit, MockK, Turbine, Robolectric |
 
 ---
 
@@ -36,13 +70,13 @@ VaultZero keeps your credentials under your control: no cloud, no network permis
 
 - Android Studio Ladybug or newer
 - JDK 17+
-- Android SDK with API 35
-- Kotlin 2.x
+- Android SDK API 35
+- Kotlin 2.0.20
 
 ### Steps
 
 ```bash
-git clone https://github.com/yourusername/vaultzero.git
+git clone https://github.com/ChrisDesarden/vaultzero.git
 cd vaultzero
 ./gradlew assembleDebug
 ```
@@ -56,26 +90,88 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 Run unit tests:
 
 ```bash
-./gradlew test
-```
-
-Run instrumentation tests:
-
-```bash
-./gradlew connectedAndroidTest
+./gradlew testDebugUnitTest
 ```
 
 ---
 
 ## Architecture
 
-- **UI:** Jetpack Compose + Material Design 3 + Jetpack Navigation Compose.
-- **DI:** Hilt wires `ViewModel`s to `Repository`/`UseCase` classes.
-- **State:** UI state flows from `ViewModel` via `StateFlow`; one-time events via `SharedFlow`.
-- **Biometrics:** `androidx.biometric:biometric` + Keystore-backed AES/GCM key.
-- **Clipboard:** `SecureClipboard` clears the primary clip after a timeout.
+```
+Presentation                Domain                Data
+┌──────────────────┐       ┌───────────────┐     ┌──────────────────────────┐
+│ UnlockScreen       │◄────│ VaultRepository │◄────│ VaultRepositoryImpl        │
+│ HomeScreen         │      │  (interface)    │     │  - Room + SQLCipher DB     │
+│ EntryEditScreen    │      └───────────────┘     │  - DataStore settings      │
+│ SettingsScreen     │                            │  - CryptoManager           │
+└──────────────────┘                            └──────────────────────────┘
+                                                           │
+                                                           ▼
+                                                    ┌───────────────┐
+                                                    │ CryptoManager │
+                                                    │ - Argon2id    │
+                                                    │ - PBKDF2      │
+                                                    │ - AES-256-GCM │
+                                                    └───────────────┘
+```
 
-The repository layer is intentionally stubbed as `InMemoryVaultRepository` so Agent 2 can later swap in the real encrypted database implementation without touching the UI.
+- **Presentation:** Compose screens observe `StateFlow`s from `ViewModel`s.
+- **Domain:** Use cases mediate between UI and `VaultRepository`.
+- **Data:** `VaultRepositoryImpl` coordinates Room entities, SQLCipher, DataStore, and
+  `CryptoManager`.
+
+### Security Model
+
+1. **KDF:** the master password is stretched with Argon2id (or PBKDF2 fallback) using a
+   random 16-byte salt stored in `vault.db.salt`.
+2. **SQLCipher:** the database file is encrypted with a 256-bit key derived from the
+   stretched master key.
+3. **Per-entry encryption:** passwords and notes are encrypted again with per-entry keys
+   derived via HMAC-SHA256(masterKey, "VaultZero/Entry/1.0" + entryUuid).
+4. **Master key lifetime:** the derived master key is held in memory only while the vault is
+   unlocked and is zero-filled in `lock()`.
+5. **Biometrics:** a Keystore-backed AES/GCM key encrypts the database key; the ciphertext is
+   stored in DataStore.
+6. **Best-effort secure memory:** `CryptoManager.wipe()` overwrites `ByteArray`/`CharArray`
+   contents. On Android this is best-effort due to GC and copy-on-write.
+
+---
+
+## Credits & Inspiration
+
+VaultZero is a learning/educational project and owes a great deal to existing open-source
+password managers and libraries:
+
+- **Password Safe** — the original concept of a small, offline, user-controlled password
+  database. VaultZero borrows the *philosophy*, not the code.
+  - Website: https://pwsafe.org/
+  - License: Artistic License 2.0
+
+- **KeePass / KeePassDX** — inspiration for group-based organization, per-entry encryption,
+  and offline-first design.
+  - KeePass website: https://keepass.info/
+  - KeePassDX repository: https://github.com/Kunzisoft/KeePassDX
+  - License: GPL-3.0
+
+- **AndroidX / Jetpack Compose** — the entire UI toolkit.
+  - Repository: https://github.com/androidx/androidx
+  - License: Apache-2.0
+
+- **Hilt** — dependency injection.
+  - Repository: https://github.com/google/dagger
+  - License: Apache-2.0
+
+- **Room & SQLCipher** — local database and transparent database encryption.
+  - SQLCipher: https://github.com/sqlcipher/sqlcipher (BSD-style)
+  - Zetetic SQLCipher Android bindings: https://www.zetetic.net/sqlcipher/
+
+- **BouncyCastle** — PBKDF2 and AES-GCM primitives used in unit tests.
+  - Website: https://www.bouncycastle.org/
+  - License: BouncyCastle License (MIT-like)
+
+- **Argon2-JVM** — Argon2id implementation.
+  - Repository: https://github.com/phxql/argon2-jvm
+  - License: MIT
 
 ---
 
@@ -99,26 +195,24 @@ GNU General Public License for more details.
 
 ## Contributing
 
-We welcome contributions! Please follow these guidelines:
-
 1. Fork the repository and create a feature branch.
-2. Keep changes focused and add tests where possible.
-3. Ensure `./gradlew test` passes locally.
-4. Open a pull request with a clear description of the change.
-5. Be respectful — this is a security-sensitive project; review carefully.
+2. Keep changes focused; add tests where possible.
+3. Run `./gradlew testDebugUnitTest` before opening a PR.
+4. Be respectful — this is a security-sensitive project.
 
-### Security
+### Reporting Security Issues
 
-If you discover a security issue, please open a **private** issue or email the maintainers directly. Do not disclose vulnerabilities publicly until a fix is released.
+Please open a **private** issue or contact the maintainers directly. Do not disclose
+vulnerabilities publicly until a fix is released.
 
 ---
 
 ## Roadmap
 
-- [ ] Replace in-memory repository with encrypted SQLite/Room backend.
-- [ ] Add KeePass `.kdbx` import/export compatibility.
+- [ ] KeePass `.kdbx` import/export compatibility.
 - [ ] TOTP code generation for entries.
 - [ ] Attachments support for entries.
+- [ ] Android 16 KB page-size compatibility fixes.
 - [ ] Wear OS companion unlock.
 
 ---

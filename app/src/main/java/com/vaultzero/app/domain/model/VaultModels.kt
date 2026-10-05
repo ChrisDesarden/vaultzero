@@ -1,6 +1,7 @@
 package com.vaultzero.app.domain.model
 
 import android.os.Parcelable
+import androidx.compose.runtime.Immutable
 import kotlinx.parcelize.Parcelize
 
 // ------------------------------------------------------------------
@@ -8,6 +9,7 @@ import kotlinx.parcelize.Parcelize
 // These hold plaintext fields; the repository encrypts/decrypts at the boundary.
 // ------------------------------------------------------------------
 
+@Immutable
 @Parcelize
 data class VaultEntry(
     val id: String,
@@ -23,6 +25,7 @@ data class VaultEntry(
     val modifiedAt: Long = System.currentTimeMillis()
 ) : Parcelable
 
+@Immutable
 @Parcelize
 data class VaultGroup(
     val id: String,
@@ -49,6 +52,7 @@ enum class AutoLockTimeout(val seconds: Int, val label: String) {
     NEVER(-1, "Never")
 }
 
+@Immutable
 data class PasswordGeneratorDefaults(
     val length: Int = 16,
     val includeUppercase: Boolean = true,
@@ -59,6 +63,7 @@ data class PasswordGeneratorDefaults(
 )
 
 // Kept for backward compat with any UI code referencing it
+@Immutable
 data class VaultSettings(
     val theme: AppTheme = AppTheme.SYSTEM,
     val autoLockTimeout: AutoLockTimeout = AutoLockTimeout.FIVE_MINUTES,

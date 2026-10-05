@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version='1.0' encoding='utf-8'?>
 <resources>
     <string name="app_name">VaultZero</string>
     <string name="unlock_title">Unlock Vault</string>
@@ -36,7 +36,7 @@
     <string name="error_biometric_not_available">Biometric unlock is not available on this device</string>
     <string name="empty_vault">Vault is empty</string>
 
-    <!-- Added for hardcoded string removal -->
+    
     <string name="lock_vault">Lock vault</string>
     <string name="menu">Menu</string>
     <string name="add_entry">Add entry</string>
@@ -67,4 +67,4 @@
     <string name="biometric_prompt_subtitle">Authenticate to access your vault</string>
     <string name="biometric_prompt_use_password">Use password</string>
     <string name="back">Back</string>
-</resources>
+<string name="import_export">Import / Export</string></resources>

@@ -1,4 +1,4 @@
-package com.vaultzero.app.presentation.group
+package com.vaultzero.app.presentation.groups
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,8 +33,8 @@ import com.vaultzero.app.domain.model.VaultGroup
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GroupManagementScreen(
-    viewModel: GroupManagementViewModel,
+fun GroupScreen(
+    viewModel: GroupViewModel,
     onBack: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()

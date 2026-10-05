@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+        VaultZero is offline-only. This config disables cleartext traffic
+        and sets a default pin-set that trusts no certificates, ensuring no
+        accidental network egress can occur even if a permission is added later.
+    -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <!-- Empty: trust no CA certificates. -->
+        </trust-anchors>
+    </base-config>
+</network-security-config>

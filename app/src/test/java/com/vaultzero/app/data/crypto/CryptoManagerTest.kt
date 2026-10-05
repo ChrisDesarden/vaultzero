@@ -12,18 +12,9 @@ class CryptoManagerTest {
     private val crypto = CryptoManager()
 
     @Test
-    fun `deriveMasterKey with Argon2id returns 32 bytes`() {
-        val salt = crypto.randomBytes(16)
-        val key = crypto.deriveMasterKey("password".toCharArray(), salt, useArgon2 = true)
-        assertEquals(32, key.size)
-        crypto.wipe(key)
-        crypto.wipe(salt)
-    }
-
-    @Test
     fun `deriveMasterKey with PBKDF2 returns 32 bytes`() {
         val salt = crypto.randomBytes(16)
-        val key = crypto.deriveMasterKey("password".toCharArray(), salt, useArgon2 = false)
+        val key = crypto.deriveMasterKey("password".toCharArray(), salt)
         assertEquals(32, key.size)
         crypto.wipe(key)
         crypto.wipe(salt)
@@ -32,8 +23,8 @@ class CryptoManagerTest {
     @Test
     fun `same password and salt produce same key`() {
         val salt = crypto.randomBytes(16)
-        val key1 = crypto.deriveMasterKey("testpass".toCharArray(), salt, useArgon2 = false)
-        val key2 = crypto.deriveMasterKey("testpass".toCharArray(), salt, useArgon2 = false)
+        val key1 = crypto.deriveMasterKey("testpass".toCharArray(), salt)
+        val key2 = crypto.deriveMasterKey("testpass".toCharArray(), salt)
         assertTrue(key1.contentEquals(key2))
         crypto.wipe(key1)
         crypto.wipe(key2)
@@ -43,8 +34,8 @@ class CryptoManagerTest {
     @Test
     fun `different passwords produce different keys`() {
         val salt = crypto.randomBytes(16)
-        val key1 = crypto.deriveMasterKey("pass1".toCharArray(), salt, useArgon2 = false)
-        val key2 = crypto.deriveMasterKey("pass2".toCharArray(), salt, useArgon2 = false)
+        val key1 = crypto.deriveMasterKey("pass1".toCharArray(), salt)
+        val key2 = crypto.deriveMasterKey("pass2".toCharArray(), salt)
         assertTrue(!key1.contentEquals(key2))
         crypto.wipe(key1)
         crypto.wipe(key2)

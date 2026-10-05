@@ -28,6 +28,7 @@ interface VaultRepository {
     suspend fun createVault(password: String): UnlockResult
     suspend fun isVaultCreated(): Boolean
     suspend fun unlock(password: String): UnlockResult
+    suspend fun unlockWithBiometric(): UnlockResult
     suspend fun isUnlocked(): Boolean
     suspend fun lock()
 
@@ -43,7 +44,6 @@ interface VaultRepository {
 
     // -- Groups --
     val groups: Flow<List<VaultGroup>>
-    fun getGroups(): Flow<List<VaultGroup>>
     suspend fun saveGroup(group: VaultGroup)
     suspend fun deleteGroup(groupId: String)
 
@@ -57,6 +57,8 @@ interface VaultRepository {
     suspend fun setAutoLockTimeout(timeout: AutoLockTimeout)
     suspend fun setPasswordDefaults(defaults: PasswordGeneratorDefaults)
     suspend fun setBiometricEnabled(enabled: Boolean)
+    suspend fun enrollBiometric(): Boolean
+    suspend fun disableBiometric()
 
     // -- Settings (legacy aggregate for backward compat) --
     fun getSettings(): Flow<VaultSettings>
@@ -68,6 +70,6 @@ interface VaultRepository {
     suspend fun clearBiometricKey()
 
     // -- Import / Export --
-    suspend fun exportVault(uri: Uri): Boolean
-    suspend fun importVault(uri: Uri): Boolean
+    suspend fun exportVault(uri: Uri, password: String): Boolean
+    suspend fun importVault(uri: Uri, password: String): Boolean
 }

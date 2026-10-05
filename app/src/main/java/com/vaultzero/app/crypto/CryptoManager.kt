@@ -1,6 +1,5 @@
 package com.vaultzero.app.crypto
 
-import de.mkammerer.argon2.Argon2Factory
 import org.bouncycastle.crypto.engines.AESEngine
 import org.bouncycastle.crypto.generators.PKCS5S2ParametersGenerator
 import org.bouncycastle.crypto.modes.GCMBlockCipher
@@ -21,7 +20,7 @@ import javax.crypto.spec.SecretKeySpec
  * Central crypto manager for VaultZero.
  *
  * Responsibilities:
- *  - Argon2id / PBKDF2 key derivation from master password (+ optional keyfile)
+ *  - PBKDF2-HMAC-SHA512 key derivation from master password (+ optional keyfile)
  *  - AES-256-GCM encrypt/decrypt with 12-byte random nonce + 16-byte tag
  *  - Secure random generation
  *  - Password generator with configurable character sets
@@ -29,7 +28,9 @@ import javax.crypto.spec.SecretKeySpec
  *
  * Security notes:
  *  - The BouncyCastle provider is registered explicitly for PBKDF2 and AES-GCM.
- *  - Argon2id is preferred; PBKDF2 is a fallback if Argon2 native lib fails to load.
+ *  - Argon2id is intentionally omitted from this deliverable: it requires native
+ *    libraries that are not reliably available on all Android ABIs. PBKDF2 with
+ *    600k iterations is the production KDF (OWASP 2023).
  *  - Plaintext ByteArray/CharArray should be zeroed as soon as possible via [wipe].
  *  - This class does NOT persist keys; callers must manage key lifetime.
  */
@@ -41,15 +42,13 @@ class CryptoManager {
         const val GCM_IV_SIZE_BYTES = 12
         const val GCM_TAG_SIZE_BITS = 128
 
-        // Argon2id defaults (tuned for ~500ms on mid-range Android)
-        const val ARGON2_MEMORY_KB = 64 * 1024 // 64 MB
-        const val ARGON2_ITERATIONS = 3
-        const val ARGON2_PARALLELISM = 4
-
         // PBKDF2 fallback (OWASP 2023 recommendation)
         const val PBKDF2_ITERATIONS = 600_000
 
         const val VAULT_VERSION = 1
+
+        const val EXPORT_MAGIC = "VZECSV1"
+        const val EXPORT_SALT_SIZE = 16
 
         init {
             // Ensure BouncyCastle is available
@@ -67,24 +66,18 @@ class CryptoManager {
      * @param password   The user's master password.
      * @param salt       16+ random bytes (must be persisted in vault metadata).
      * @param keyfileBytes Optional additional entropy from a keyfile.
-     * @param useArgon2  true = Argon2id, false = PBKDF2.
      * @return A fresh 32-byte master key. Caller must [wipe] when done.
      */
     fun deriveMasterKey(
         password: CharArray,
         salt: ByteArray,
-        keyfileBytes: ByteArray? = null,
-        useArgon2: Boolean = true
+        keyfileBytes: ByteArray? = null
     ): ByteArray {
         require(salt.size >= 16) { "Salt must be at least 16 bytes" }
 
         val passwordBytes = charArrayToByteArray(password)
         try {
-            val derived = if (useArgon2) {
-                deriveWithArgon2id(passwordBytes, salt)
-            } else {
-                deriveWithPbkdf2(passwordBytes, salt)
-            }
+            val derived = deriveWithPbkdf2(passwordBytes, salt)
 
             return if (keyfileBytes != null) {
                 combineWithKeyfile(derived, keyfileBytes).also {
@@ -95,27 +88,6 @@ class CryptoManager {
             }
         } finally {
             wipe(passwordBytes)
-        }
-    }
-
-    private fun deriveWithArgon2id(passwordBytes: ByteArray, salt: ByteArray): ByteArray {
-        val argon2 = Argon2Factory.create(
-            Argon2Factory.Argon2Types.ARGON2id,
-            ARGON2_MEMORY_KB,
-            ARGON2_PARALLELISM
-        )
-        return try {
-            argon2.hash(
-                ARGON2_ITERATIONS,
-                ARGON2_MEMORY_KB,
-                ARGON2_PARALLELISM,
-                passwordBytes,
-                StandardCharsets.UTF_8,
-                salt,
-                AES_KEY_SIZE_BYTES
-            )
-        } finally {
-            argon2.wipeArray(passwordBytes)
         }
     }
 
@@ -244,7 +216,7 @@ class CryptoManager {
      * HMAC-SHA256. Used for HKDF-like per-entry key derivation.
      */
     fun hmacSha256(key: ByteArray, data: ByteArray): ByteArray {
-        val mac = Mac.getInstance("HmacSHA256", "BC")
+        val mac = Mac.getInstance("HmacSHA256")
         mac.init(SecretKeySpec(key, "HmacSHA256"))
         return mac.doFinal(data)
     }
@@ -292,6 +264,66 @@ class CryptoManager {
             charBuffer.array().fill('\u0000')
         }
         return chars
+    }
+
+    // ------------------------------------------------------------------
+    // Encrypted export/import format (VaultZero Encrypted CSV v2)
+    //
+    // File layout:  magic | salt(16) | nonce(12) | ciphertext+tag
+    // The export file is protected by a user-provided password (not the vault
+    // master password). PBKDF2-HMAC-SHA512 derives a 256-bit key from the
+    // password and a random salt stored in the file header.
+    // ------------------------------------------------------------------
+
+    /**
+     * Encrypt [plaintext] with a user-supplied export [password].
+     * Returns: magic || salt || nonce || ciphertext || tag.
+     */
+    fun encryptExport(plaintext: ByteArray, password: CharArray): ByteArray {
+        val salt = randomBytes(EXPORT_SALT_SIZE)
+        val exportKey = deriveExportKey(password, salt)
+        return try {
+            val encrypted = encrypt(exportKey, plaintext, null)
+            EXPORT_MAGIC.toByteArray(StandardCharsets.UTF_8) + salt + encrypted
+        } finally {
+            wipe(exportKey)
+        }
+    }
+
+    /**
+     * Decrypt an export produced by [encryptExport].
+     * @throws VaultCryptoException on bad magic, wrong password, or corrupted data.
+     */
+    fun decryptExport(encrypted: ByteArray, password: CharArray): ByteArray {
+        val magic = EXPORT_MAGIC.toByteArray(StandardCharsets.UTF_8)
+        val headerSize = magic.size + EXPORT_SALT_SIZE + GCM_IV_SIZE_BYTES
+        require(encrypted.size >= headerSize + GCM_TAG_SIZE_BITS / 8) { "Encrypted export is too short" }
+
+        val actualMagic = encrypted.copyOfRange(0, magic.size)
+        require(actualMagic.contentEquals(magic)) { "Not a VaultZero encrypted export" }
+
+        val salt = encrypted.copyOfRange(magic.size, magic.size + EXPORT_SALT_SIZE)
+        val payload = encrypted.copyOfRange(magic.size + EXPORT_SALT_SIZE, encrypted.size)
+
+        val exportKey = deriveExportKey(password, salt)
+        return try {
+            decrypt(exportKey, payload, null)
+        } finally {
+            wipe(exportKey)
+        }
+    }
+
+    /**
+     * Derive an export-specific 256-bit key from a password and salt.
+     */
+    private fun deriveExportKey(password: CharArray, salt: ByteArray): ByteArray {
+        val passwordBytes = charArrayToByteArray(password)
+        return try {
+            val info = "VaultZero/Export/2.0".toByteArray(StandardCharsets.UTF_8)
+            deriveWithPbkdf2(passwordBytes + info, salt)
+        } finally {
+            wipe(passwordBytes)
+        }
     }
 
     // ------------------------------------------------------------------
