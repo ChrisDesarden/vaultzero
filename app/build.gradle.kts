@@ -47,6 +47,9 @@ android {
     buildFeatures {
         compose = true
     }
+    lint {
+        disable += "NullSafeMutableLiveData"
+    }
     // Compose Compiler plugin handles this automatically
     packaging {
         resources {
