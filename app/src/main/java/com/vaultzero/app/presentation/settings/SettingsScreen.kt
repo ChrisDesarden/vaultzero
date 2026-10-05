@@ -148,6 +148,7 @@ private fun ImportExportSection(
     val context = LocalContext.current
     var pendingExportUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var pendingImportUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var pendingPasswordSafeUri by remember { mutableStateOf<android.net.Uri?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/octet-stream"),
@@ -165,6 +166,14 @@ private fun ImportExportSection(
         }
     )
 
+    val passwordSafeLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri ->
+            pendingPasswordSafeUri = uri
+            if (uri == null) onMessage("PasswordSafe import cancelled")
+        }
+    )
+
     Column(modifier = Modifier.fillMaxWidth()) {
         OutlinedButton(
             onClick = { exportLauncher.launch("vaultzero-export.vzc") },
@@ -178,6 +187,13 @@ private fun ImportExportSection(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Import encrypted CSV")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = { passwordSafeLauncher.launch(arrayOf("*/*")) },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Import PasswordSafe database")
         }
     }
 
@@ -199,6 +215,17 @@ private fun ImportExportSection(
             onConfirm = { password ->
                 pendingImportUri = null
                 viewModel.importVault(uri, password) { msg -> onMessage(msg) }
+            }
+        )
+    }
+
+    pendingPasswordSafeUri?.let { uri ->
+        PasswordDialog(
+            title = "PasswordSafe password",
+            onDismiss = { pendingPasswordSafeUri = null },
+            onConfirm = { password ->
+                pendingPasswordSafeUri = null
+                viewModel.importPasswordSafe(uri, password) { msg -> onMessage(msg) }
             }
         )
     }

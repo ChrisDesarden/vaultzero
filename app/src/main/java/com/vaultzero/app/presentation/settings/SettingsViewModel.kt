@@ -10,6 +10,7 @@ import com.vaultzero.app.domain.model.PasswordGeneratorDefaults
 import com.vaultzero.app.domain.model.VaultSettings
 import com.vaultzero.app.domain.usecase.DisableBiometricUseCase
 import com.vaultzero.app.domain.usecase.ExportVaultUseCase
+import com.vaultzero.app.domain.usecase.ImportPasswordSafeUseCase
 import com.vaultzero.app.domain.usecase.ImportVaultUseCase
 import com.vaultzero.app.domain.usecase.EnrollBiometricUseCase
 import com.vaultzero.app.domain.usecase.GetSettingsUseCase
@@ -37,6 +38,7 @@ class SettingsViewModel @Inject constructor(
     private val disableBiometric: DisableBiometricUseCase,
     private val exportVault: ExportVaultUseCase,
     private val importVault: ImportVaultUseCase,
+    private val importPasswordSafe: ImportPasswordSafeUseCase,
     private val biometricHelper: BiometricHelper
 ) : ViewModel() {
 
@@ -152,6 +154,13 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+
+    fun importPasswordSafe(uri: android.net.Uri, password: String, onResult: (String?) -> Unit) {
+        viewModelScope.launch {
+            val ok = importPasswordSafe.invoke(uri, password)
+            onResult(if (ok) null else "Import failed: wrong PasswordSafe password or unsupported file")
+        }
+    }
 
     data class SettingsUiState(
         val theme: AppTheme = AppTheme.SYSTEM,

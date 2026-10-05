@@ -484,6 +484,18 @@ class VaultRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun importPasswordSafe(uri: Uri, password: String): Boolean {
+        return try {
+            val importer = PasswordSafeImporter(context, crypto)
+            val entries = importer.import(uri, password) ?: return false
+            entries.forEach { saveEntry(it) }
+            true
+        } catch (e: Exception) {
+            Log.e("VaultRepository", "importPasswordSafe failed", e)
+            false
+        }
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------

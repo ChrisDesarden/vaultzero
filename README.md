@@ -1,3 +1,6 @@
+[![CI](https://github.com/ChrisDesarden/vaultzero/actions/workflows/ci.yml/badge.svg)](https://github.com/ChrisDesarden/vaultzero/actions/workflows/ci.yml)
+[![Latest Debug APK](https://github.com/ChrisDesarden/vaultzero/actions/workflows/release.yml/badge.svg)](https://github.com/ChrisDesarden/vaultzero/releases/tag/latest)
+
 # VaultZero
 
 A fully offline, open-source Android password manager. No cloud, no network permissions,
@@ -64,7 +67,24 @@ to audit. VaultZero takes the opposite approach:
 
 ---
 
-## Build Instructions
+## Download the APK
+
+The latest debug APK is built automatically on every push to `main`:
+
+**[⬇ Download latest APK](https://github.com/ChrisDesarden/vaultzero/releases/download/latest/vaultzero-latest.apk)**
+
+> The rolling release lives at the [`latest`](https://github.com/ChrisDesarden/vaultzero/releases/tag/latest) tag. It is rebuilt automatically by GitHub Actions, so the file above always points to the newest successful build.
+
+### Install
+
+1. Download `vaultzero-latest.apk` on your Android device.
+2. Open the file from your notification or file manager.
+3. If prompted, allow installation from this source.
+4. Tap **Install**.
+
+This is a debug build. For a production release, build and sign a release APK locally.
+
+---
 
 ### Requirements
 

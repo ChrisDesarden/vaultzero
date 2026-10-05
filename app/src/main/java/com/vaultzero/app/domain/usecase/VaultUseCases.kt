@@ -164,6 +164,10 @@ class ImportVaultUseCase @Inject constructor(private val repository: VaultReposi
     suspend operator fun invoke(uri: Uri, password: String): Boolean = repository.importVault(uri, password)
 }
 
+class ImportPasswordSafeUseCase @Inject constructor(private val repository: VaultRepository) {
+    suspend operator fun invoke(uri: Uri, password: String): Boolean = repository.importPasswordSafe(uri, password)
+}
+
 class ChangeMasterPasswordUseCase @Inject constructor(private val repository: VaultRepository) {
     /**
      * Re-creates the vault with [newPassword], preserving entries and groups.

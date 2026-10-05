@@ -1,0 +1,62 @@
+name: Release latest APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Rename APK
+        run: |
+          mkdir -p release
+          cp app/build/outputs/apk/debug/app-debug.apk "release/vaultzero-latest.apk"
+
+      - name: Create or update latest release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Latest Debug APK
+          tag_name: latest
+          body: |
+            Rolling debug build from the latest commit on `main`.
+
+            **How to install**
+            1. Download `vaultzero-latest.apk` below.
+            2. Transfer it to your Android device.
+            3. Open it and allow installation from this source if prompted.
+            4. Tap **Install**.
+
+            This is a debug build. For production use, build and sign a release APK locally.
+          files: release/vaultzero-latest.apk
+          prerelease: true
+          make_latest: true

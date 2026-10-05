@@ -72,4 +72,5 @@ interface VaultRepository {
     // -- Import / Export --
     suspend fun exportVault(uri: Uri, password: String): Boolean
     suspend fun importVault(uri: Uri, password: String): Boolean
+    suspend fun importPasswordSafe(uri: Uri, password: String): Boolean
 }
