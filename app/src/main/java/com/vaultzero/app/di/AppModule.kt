@@ -1,7 +1,8 @@
 package com.vaultzero.app.di
 
 import android.content.Context
-import com.vaultzero.app.data.repository.VaultRepositoryImpl
+import com.vaultzero.app.crypto.CryptoManager
+import com.vaultzero.app.data.repository.SqlCipherVaultRepository
 import com.vaultzero.app.domain.repository.VaultRepository
 import dagger.Module
 import dagger.Provides
@@ -16,7 +17,12 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideCryptoManager(): CryptoManager = CryptoManager()
+
+    @Provides
+    @Singleton
     fun provideVaultRepository(
-        @ApplicationContext context: Context
-    ): VaultRepository = VaultRepositoryImpl(context)
+        @ApplicationContext context: Context,
+        crypto: CryptoManager
+    ): VaultRepository = SqlCipherVaultRepository(context, crypto)
 }

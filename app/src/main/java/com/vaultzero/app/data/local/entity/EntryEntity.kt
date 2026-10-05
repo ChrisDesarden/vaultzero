@@ -51,6 +51,7 @@ data class EntryEntity(
     @ColumnInfo(name = "notes_cipher")
     val notesCipher: ByteArray? = null,
 
+    /** JSON array of tags stored as string */
     @ColumnInfo(name = "tags")
     val tags: String = "",
 

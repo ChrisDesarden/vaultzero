@@ -14,7 +14,7 @@ class PasswordGenerator @Inject constructor() {
         val uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         val lowercase = "abcdefghijklmnopqrstuvwxyz"
         val numbers = "0123456789"
-        val symbols = "!@#$%^\u0026*()-_=+[]{}|;:,.?<>"
+        val symbols = "!@#$%^&*()-_=+[]{}|;:,.?<>"
         val ambiguous = "0O1lI"
 
         val pool = buildString {

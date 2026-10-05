@@ -7,6 +7,7 @@ import org.bouncycastle.crypto.modes.GCMBlockCipher
 import org.bouncycastle.crypto.params.AEADParameters
 import org.bouncycastle.crypto.params.KeyParameter
 import org.bouncycastle.jce.provider.BouncyCastleProvider
+import org.bouncycastle.util.encoders.Hex
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
 import java.nio.charset.StandardCharsets
@@ -65,9 +66,7 @@ class CryptoManager {
      *
      * @param password   The user's master password.
      * @param salt       16+ random bytes (must be persisted in vault metadata).
-     * @param keyfileBytes Optional additional entropy from a keyfile. If provided,
-     *                     the raw file contents are hashed with SHA-256 and composed
-     *                     with the password-derived key.
+     * @param keyfileBytes Optional additional entropy from a keyfile.
      * @param useArgon2  true = Argon2id, false = PBKDF2.
      * @return A fresh 32-byte master key. Caller must [wipe] when done.
      */
@@ -99,9 +98,6 @@ class CryptoManager {
         }
     }
 
-    /**
-     * Derive using Argon2id (preferred). Tuned for ~500ms on typical devices.
-     */
     private fun deriveWithArgon2id(passwordBytes: ByteArray, salt: ByteArray): ByteArray {
         val argon2 = Argon2Factory.create(
             Argon2Factory.Argon2Types.ARGON2id,
@@ -123,9 +119,6 @@ class CryptoManager {
         }
     }
 
-    /**
-     * Derive using PBKDF2-HMAC-SHA256 (fallback if Argon2 unavailable).
-     */
     private fun deriveWithPbkdf2(passwordBytes: ByteArray, salt: ByteArray): ByteArray {
         val gen = PKCS5S2ParametersGenerator()
         gen.init(passwordBytes, salt, PBKDF2_ITERATIONS)
@@ -133,10 +126,6 @@ class CryptoManager {
         return (params as KeyParameter).key
     }
 
-    /**
-     * Combine a password-derived key with a keyfile hash:
-     * combined = SHA-256(derivedKey || keyfileHash)
-     */
     private fun combineWithKeyfile(derivedKey: ByteArray, keyfileBytes: ByteArray): ByteArray {
         val keyfileHash = sha256(keyfileBytes)
         return sha256(derivedKey + keyfileHash)
@@ -262,7 +251,7 @@ class CryptoManager {
 
     /**
      * Derive a per-entry key from the master key and entry UUID.
-     * entryKey = HMAC-SHA256(masterKey, "VaultZero/Entry/1.0" + entryUuid)
+     * entryKey = HMAC-SHA256(masterKey, "VaultZero/Entry/1.0" || entryUuid)
      */
     fun deriveEntryKey(masterKey: ByteArray, entryUuid: String): ByteArray {
         val info = "VaultZero/Entry/1.0$entryUuid".toByteArray(StandardCharsets.UTF_8)
@@ -271,8 +260,6 @@ class CryptoManager {
 
     /**
      * Best-effort secure wipe of a ByteArray.
-     * On Android, this overwrites array contents; JVM may still leave copies
-     * in memory due to GC / copy-on-write.
      */
     fun wipe(bytes: ByteArray?) {
         bytes?.fill(0)
@@ -285,9 +272,6 @@ class CryptoManager {
         chars?.fill('\u0000')
     }
 
-    /**
-     * Convert CharArray to UTF-8 ByteArray without intermediate String.
-     */
     private fun charArrayToByteArray(chars: CharArray): ByteArray {
         val charBuffer = CharBuffer.wrap(chars)
         val byteBuffer = StandardCharsets.UTF_8.encode(charBuffer)
@@ -299,9 +283,6 @@ class CryptoManager {
         return bytes
     }
 
-    /**
-     * Convert UTF-8 ByteArray to CharArray without intermediate String.
-     */
     private fun byteArrayToCharArray(bytes: ByteArray): CharArray {
         val byteBuffer = ByteBuffer.wrap(bytes)
         val charBuffer = StandardCharsets.UTF_8.decode(byteBuffer)
@@ -337,7 +318,7 @@ class CryptoManager {
     private val LOWER = "abcdefghijklmnopqrstuvwxyz"
     private val UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     private val DIGITS = "0123456789"
-    private val SYMBOLS = "!@#$%^&*()-_=+[]{}|;:,<>?"
+    private val SYMBOLS = "!@#$%^&*()-_=+[]{}|;:,.<>?"
     private val AMBIGUOUS = "0O1lI"
 
     /**
@@ -359,18 +340,15 @@ class CryptoManager {
         val password = CharArray(config.length)
         var index = 0
 
-        // Guarantee at least one char from each enabled set
         if (config.includeLowercase) password[index++] = LOWER.randomChar()
         if (config.includeUppercase) password[index++] = UPPER.randomChar()
         if (config.includeNumbers) password[index++] = DIGITS.randomChar()
         if (config.includeSymbols) password[index++] = SYMBOLS.randomChar()
 
-        // Fill remaining with random chars from pool
         while (index < config.length) {
             password[index++] = pool.randomChar()
         }
 
-        // Shuffle
         password.shuffle()
         return password
     }
@@ -386,10 +364,6 @@ class CryptoManager {
             this[j] = tmp
         }
     }
-
-    // ------------------------------------------------------------------
-    // Exceptions
-    // ------------------------------------------------------------------
 
     class VaultCryptoException(message: String, cause: Throwable? = null) : Exception(message, cause)
 }

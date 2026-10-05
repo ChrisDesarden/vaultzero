@@ -10,14 +10,12 @@ import com.vaultzero.app.data.local.entity.GroupEntity
 import com.vaultzero.app.data.local.entity.VaultMetadataEntity
 
 /**
- * Room database for VaultZero.
+ * SQLCipher-backed Room database for VaultZero.
  *
- * This database lives inside a SQLCipher-encrypted SQLite file. The passphrase is
- * provided at runtime via [net.sqlcipher.database.SupportFactory]; Room itself
- * is unaware of the encryption.
+ * The actual encryption is handled by SQLCipher via [net.sqlcipher.database.SupportFactory]
+ * passed to [Room.databaseBuilder] at repository construction time.
  *
- * Schema version history:
- *   1 - Initial schema (metadata, entries, groups)
+ * This class is abstract; Room generates the implementation at compile time.
  */
 @Database(
     entities = [

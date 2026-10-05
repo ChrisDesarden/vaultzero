@@ -5,8 +5,9 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 
 /**
- * Singleton metadata row for the vault (id forced to 1).
- * Stores KDF parameters and the encrypted database key.
+ * Singleton metadata row for the vault (id is forced to 1).
+ * Stores KDF parameters and the encrypted database key (not the master key itself).
+ * The database key is encrypted with AES-256-GCM using the derived master key.
  */
 @Entity(tableName = "vault_metadata")
 data class VaultMetadataEntity(

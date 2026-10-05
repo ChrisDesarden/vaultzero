@@ -12,16 +12,16 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface GroupDao {
 
-    @Query("SELECT * FROM groups ORDER BY name ASC")
+    @Query("SELECT * FROM groups ORDER BY sort_order ASC, name ASC")
     fun observeAll(): Flow<List<GroupEntity>>
 
-    @Query("SELECT * FROM groups ORDER BY name ASC")
+    @Query("SELECT * FROM groups ORDER BY sort_order ASC, name ASC")
     suspend fun getAll(): List<GroupEntity>
 
     @Query("SELECT * FROM groups WHERE uuid = :uuid LIMIT 1")
     suspend fun getByUuid(uuid: String): GroupEntity?
 
-    @Query("SELECT * FROM groups WHERE parent_uuid = :parentUuid ORDER BY name ASC")
+    @Query("SELECT * FROM groups WHERE parent_uuid = :parentUuid ORDER BY sort_order ASC, name ASC")
     fun observeByParent(parentUuid: String): Flow<List<GroupEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

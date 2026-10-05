@@ -1,32 +1,30 @@
 package com.vaultzero.app.domain.usecase
 
-import android.net.Uri
 import com.vaultzero.app.crypto.CryptoManager
-import com.vaultzero.app.domain.model.PasswordGeneratorDefaults
+import com.vaultzero.app.domain.model.UnlockResult
 import com.vaultzero.app.domain.model.VaultEntry
 import com.vaultzero.app.domain.model.VaultGroup
-import com.vaultzero.app.domain.model.VaultSettings
 import com.vaultzero.app.domain.repository.VaultRepository
 import javax.inject.Inject
 
+class CreateVaultUseCase @Inject constructor(private val repo: VaultRepository) {
+    suspend operator fun invoke(password: String): UnlockResult = repo.createVault(password)
+}
+
 class UnlockVaultUseCase @Inject constructor(private val repo: VaultRepository) {
-    suspend operator fun invoke(password: String) = repo.unlock(password)
+    suspend operator fun invoke(password: String): UnlockResult = repo.unlock(password)
 }
 
 class LockVaultUseCase @Inject constructor(private val repo: VaultRepository) {
     suspend operator fun invoke() = repo.lock()
 }
 
-class CreateVaultUseCase @Inject constructor(private val repo: VaultRepository) {
-    suspend operator fun invoke(password: String) = repo.createVault(password)
-}
-
 class IsVaultCreatedUseCase @Inject constructor(private val repo: VaultRepository) {
-    suspend operator fun invoke() = repo.isVaultCreated()
+    suspend operator fun invoke(): Boolean = repo.isVaultCreated()
 }
 
 class GetEntriesUseCase @Inject constructor(private val repo: VaultRepository) {
-    operator fun invoke(groupId: String? = null) = repo.entries
+    operator fun invoke(groupId: String?) = repo.getEntries(groupId)
 }
 
 class SearchEntriesUseCase @Inject constructor(private val repo: VaultRepository) {
@@ -46,7 +44,7 @@ class DeleteEntryUseCase @Inject constructor(private val repo: VaultRepository) 
 }
 
 class GetGroupsUseCase @Inject constructor(private val repo: VaultRepository) {
-    operator fun invoke() = repo.groups
+    operator fun invoke() = repo.getGroups()
 }
 
 class SaveGroupUseCase @Inject constructor(private val repo: VaultRepository) {
@@ -57,34 +55,24 @@ class DeleteGroupUseCase @Inject constructor(private val repo: VaultRepository) 
     suspend operator fun invoke(groupId: String) = repo.deleteGroup(groupId)
 }
 
-class GetSettingsUseCase @Inject constructor(private val repo: VaultRepository) {
-    operator fun invoke() = repo.getSettings()
+class GeneratePasswordUseCase @Inject constructor(private val crypto: CryptoManager) {
+    operator fun invoke(config: CryptoManager.PasswordConfig = CryptoManager.PasswordConfig()): CharArray =
+        crypto.generatePassword(config)
 }
 
-class SaveSettingsUseCase @Inject constructor(private val repo: VaultRepository) {
-    suspend operator fun invoke(settings: VaultSettings) = repo.saveSettings(settings)
-}
-
-class GeneratePasswordUseCase @Inject constructor(
-    private val crypto: CryptoManager
-) {
-    operator fun invoke(defaults: PasswordGeneratorDefaults = PasswordGeneratorDefaults()): String {
-        val config = CryptoManager.PasswordConfig(
-            length = defaults.length,
-            includeUppercase = defaults.includeUppercase,
-            includeLowercase = defaults.includeLowercase,
-            includeNumbers = defaults.includeNumbers,
-            includeSymbols = defaults.includeSymbols,
-            excludeAmbiguous = defaults.excludeAmbiguous
-        )
-        return crypto.generatePassword(config).concatToString()
+class ChangeMasterPasswordUseCase @Inject constructor(private val repo: VaultRepository) {
+    suspend operator fun invoke(oldPassword: String, newPassword: String): UnlockResult {
+        val unlockResult = repo.unlock(oldPassword)
+        if (unlockResult !is UnlockResult.Success) return unlockResult
+        val entries = repo.entries
+        val groups = repo.groups
+        repo.lock()
+        val createResult = repo.createVault(newPassword)
+        if (createResult !is UnlockResult.Success) return createResult
+        groups.collect { it.forEach { g -> repo.saveGroup(g) } }
+        entries.collect { it.forEach { e -> repo.saveEntry(e) } }
+        repo.clearBiometricKey()
+        repo.setBiometricEnabled(false)
+        return UnlockResult.Success
     }
-}
-
-class ExportVaultUseCase @Inject constructor(private val repo: VaultRepository) {
-    suspend operator fun invoke(uri: Uri): Boolean = repo.exportVault(uri)
-}
-
-class ImportVaultUseCase @Inject constructor(private val repo: VaultRepository) {
-    suspend operator fun invoke(uri: Uri): Boolean = repo.importVault(uri)
 }
